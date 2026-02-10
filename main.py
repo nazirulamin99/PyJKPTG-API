@@ -2,9 +2,66 @@ from datetime import date, timedelta
 
 import duckdb
 from fastapi import FastAPI, Query
+from pydantic import BaseModel
 from typing import Optional
 
+
 app = FastAPI(title="JKPTG API")
+
+
+# --- Schemas ---
+
+
+class Ship(BaseModel):
+    fileNo: Optional[str] = None
+    company: Optional[str] = None
+    shipName: Optional[str] = None
+    shipCapacity: Optional[float] = None
+    licenseNo: Optional[float] = None
+    concession: Optional[str] = None
+    licensePeriod: Optional[str] = None
+    project: Optional[str] = None
+    allowOptPeriod: Optional[str] = None
+    optTime: Optional[str] = None
+    royalty: Optional[str] = None
+    official: Optional[str] = None
+    licensePeriodStart: Optional[str] = None
+    licensePeriodEnd: Optional[str] = None
+    allowOptStart: Optional[str] = None
+    allowOptEnd: Optional[str] = None
+    optTimeStart: Optional[str] = None
+    optimeEnd: Optional[str] = None
+
+
+class ShipExpiring(Ship):
+    daysRemaining: Optional[int] = None
+
+
+class Coordinate(BaseModel):
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
+
+
+class License(BaseModel):
+    BilNo: Optional[str] = None
+    licenseNo: Optional[str] = None
+    company: Optional[str] = None
+    licenseDate: Optional[str] = None
+    expiredDate: Optional[str] = None
+    zone: Optional[str] = None
+    area_km2: Optional[str] = None
+    geometryPoint: Optional[str] = None
+    coordinate: Optional[Coordinate] = None
+    lat: Optional[str] = None
+    lng: Optional[str] = None
+    status: Optional[str] = None
+    remark: Optional[int] = None
+    noFile: Optional[str] = None
+    region: Optional[str] = None
+
+
+class LicenseExpiring(License):
+    daysRemaining: Optional[int] = None
 
 SHIPLIST_PATH = "./data/Shiplist-20260112.parquet"
 LICENSELIST_PATH = "./data/Licenselist-20260122.parquet"
@@ -21,7 +78,7 @@ def query_parquet(path: str, where_clause: str = "", params: list = []) -> list[
 
 # --- Shiplist Endpoints ---
 
-@app.get("/shiplist", tags=["Shiplist"])
+@app.get("/shiplist", tags=["Shiplist"], response_model=list[Ship])
 def get_shiplist(
     concession: Optional[str] = Query(None, description="Filter by concession (e.g. Perak, Selangor)"),
     company: Optional[str] = Query(None, description="Filter by company name (partial match)"),
@@ -48,7 +105,7 @@ def get_shiplist(
     return query_parquet(SHIPLIST_PATH, where, params)
 
 
-@app.get("/shiplist/expiring", tags=["Shiplist"])
+@app.get("/shiplist/expiring", tags=["Shiplist"], response_model=list[ShipExpiring])
 def get_expiring_licenses():
     result = duckdb.execute(f"""
         SELECT *,
@@ -71,12 +128,12 @@ def get_expiring_licenses():
 #     return [dict(zip(columns, row)) for row in result.fetchall()]
 
 
-@app.get("/companies/{file_no}", tags=["Shiplist"])
+@app.get("/companies/{file_no}", tags=["Shiplist"], response_model=list[Ship])
 def get_company(file_no: str):
     return query_parquet(SHIPLIST_PATH, "fileNo = $1", [file_no])
 
 
-@app.get("/concessions", tags=["Shiplist"])
+@app.get("/concessions", tags=["Shiplist"], response_model=list[str])
 def get_concessions():
     result = duckdb.execute(f"""
         SELECT DISTINCT concession
@@ -86,7 +143,7 @@ def get_concessions():
     return [row[0] for row in result.fetchall()]
 
 
-@app.get("/concessions/{name}", tags=["Shiplist"])
+@app.get("/concessions/{name}", tags=["Shiplist"], response_model=list[Ship])
 def get_concession(name: str):
     return query_parquet(SHIPLIST_PATH, "concession ILIKE '%' || $1 || '%'", [name])
 
@@ -104,7 +161,7 @@ def nest_coordinates(rows: list[dict]) -> list[dict]:
     return rows
 
 
-@app.get("/licenselist", tags=["Licenselist"])
+@app.get("/licenselist", tags=["Licenselist"], response_model=list[License])
 def get_licenselist(
     region: Optional[str] = Query(None, description="Filter by region (e.g. PAHANG, JOHOR)"),
     company: Optional[str] = Query(None, description="Filter by company name (partial match)"),
@@ -135,7 +192,7 @@ def get_licenselist(
     return nest_coordinates(query_parquet(LICENSELIST_PATH, where, params))
 
 
-@app.get("/licenselist/expiring", tags=["Licenselist"])
+@app.get("/licenselist/expiring", tags=["Licenselist"], response_model=list[LicenseExpiring])
 def get_expiring_licenselist():
     result = duckdb.execute(f"""
         SELECT *,
@@ -147,7 +204,7 @@ def get_expiring_licenselist():
     return nest_coordinates([dict(zip(columns, row)) for row in result.fetchall()])
 
 
-@app.get("/regions", tags=["Licenselist"])
+@app.get("/regions", tags=["Licenselist"], response_model=list[str])
 def get_regions():
     result = duckdb.execute(f"""
         SELECT DISTINCT region
@@ -157,6 +214,6 @@ def get_regions():
     return [row[0] for row in result.fetchall()]
 
 
-@app.get("/regions/{name}", tags=["Licenselist"])
+@app.get("/regions/{name}", tags=["Licenselist"], response_model=list[License])
 def get_region(name: str):
     return nest_coordinates(query_parquet(LICENSELIST_PATH, "region ILIKE '%' || $1 || '%'", [name]))

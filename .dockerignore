@@ -1,0 +1,8 @@
+env/
+__pycache__/
+.vscode/
+.idea/
+.git/
+.DS_Store
+*.pyc
+test.ipynb
