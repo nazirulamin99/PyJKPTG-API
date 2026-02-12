@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import duckdb
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
+from collections import defaultdict
 from typing import Optional
 
 
@@ -43,7 +44,7 @@ class Coordinate(BaseModel):
 
 
 class License(BaseModel):
-    BilNo: Optional[str] = None
+    BilNo: Optional[int] = None
     licenseNo: Optional[str] = None
     company: Optional[str] = None
     licenseDate: Optional[str] = None
@@ -55,7 +56,7 @@ class License(BaseModel):
     lat: Optional[str] = None
     lng: Optional[str] = None
     status: Optional[str] = None
-    remark: Optional[int] = None
+    remark: Optional[str] = None
     noFile: Optional[str] = None
     region: Optional[str] = None
 
@@ -64,7 +65,7 @@ class LicenseExpiring(License):
     daysRemaining: Optional[int] = None
 
 SHIPLIST_PATH = "./data/Shiplist-20260112.parquet"
-LICENSELIST_PATH = "./data/Licenselist-20260122.parquet"
+LICENSELIST_PATH = "./data/Licenselist-20260122-testing.parquet"
 
 
 def query_parquet(path: str, where_clause: str = "", params: list = []) -> list[dict]:
@@ -161,7 +162,7 @@ def nest_coordinates(rows: list[dict]) -> list[dict]:
     return rows
 
 
-@app.get("/licenselist", tags=["Licenselist"], response_model=list[License])
+@app.get("/licenselist", tags=["Licenselist"], response_model=dict[str, list[License]])
 def get_licenselist(
     region: Optional[str] = Query(None, description="Filter by region (e.g. PAHANG, JOHOR)"),
     company: Optional[str] = Query(None, description="Filter by company name (partial match)"),
@@ -189,19 +190,29 @@ def get_licenselist(
         params.append(no_file)
 
     where = " AND ".join(conditions)
-    return nest_coordinates(query_parquet(LICENSELIST_PATH, where, params))
+    rows = nest_coordinates(query_parquet(LICENSELIST_PATH, where, params))
+    grouped = defaultdict(list)
+    for row in rows:
+        key = row.pop("licenseNo")
+        grouped[key].append(row)
+    return grouped
 
 
-@app.get("/licenselist/expiring", tags=["Licenselist"], response_model=list[LicenseExpiring])
+@app.get("/licenselist/expiring", tags=["Licenselist"], response_model=dict[str, list[LicenseExpiring]])
 def get_expiring_licenselist():
     result = duckdb.execute(f"""
         SELECT *,
-            CAST(expiredDate AS DATE) - CURRENT_DATE AS daysRemaining
+            CAST(strptime(expiredDate, '%d/%m/%Y') AS DATE) - CURRENT_DATE AS daysRemaining
         FROM '{LICENSELIST_PATH}'
         ORDER BY expiredDate ASC
     """)
     columns = [desc[0] for desc in result.description]
-    return nest_coordinates([dict(zip(columns, row)) for row in result.fetchall()])
+    rows = nest_coordinates([dict(zip(columns, row)) for row in result.fetchall()])
+    grouped = defaultdict(list)
+    for row in rows:
+        key = row.pop("licenseNo")
+        grouped[key].append(row)
+    return grouped
 
 
 @app.get("/regions", tags=["Licenselist"], response_model=list[str])
@@ -214,6 +225,11 @@ def get_regions():
     return [row[0] for row in result.fetchall()]
 
 
-@app.get("/regions/{name}", tags=["Licenselist"], response_model=list[License])
+@app.get("/regions/{name}", tags=["Licenselist"], response_model=dict[str, list[License]])
 def get_region(name: str):
-    return nest_coordinates(query_parquet(LICENSELIST_PATH, "region ILIKE '%' || $1 || '%'", [name]))
+    rows = nest_coordinates(query_parquet(LICENSELIST_PATH, "region ILIKE '%' || $1 || '%'", [name]))
+    grouped = defaultdict(list)
+    for row in rows:
+        key = row.pop("licenseNo")
+        grouped[key].append(row)
+    return grouped
